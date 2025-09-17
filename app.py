@@ -1,8 +1,15 @@
 # app.py
 import os
+import zipfile
+import streamlit as st
+import pandas as pd
+import joblib
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+import gdown
 
 # -------------------------
-# Limit threads to avoid sklearn / threadpoolctl errors
+# Limit threads to avoid sklearn / threadpoolctl error
 # -------------------------
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -11,57 +18,55 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 
 # -------------------------
-# Imports
-# -------------------------
-import streamlit as st
-import pandas as pd
-import joblib
-import matplotlib.pyplot as plt
-import statsmodels.api as sm
-import zipfile
-
-# -------------------------
 # Page Configuration
 # -------------------------
 st.set_page_config(page_title="Supply Chain ML Dashboard", layout="wide")
 st.title("🚀 Supply Chain ML Dashboard")
 
 # -------------------------
-# Base directory
+# Paths
 # -------------------------
-BASE_DIR = os.path.dirname(__file__)  # Folder containing app.py
-MODEL_DIR = BASE_DIR  # Use same folder; change if you store models elsewhere
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# -------------------------
+# Model URLs on Google Drive
+# -------------------------
+MODEL_URLS = {
+    "delivery": "https://drive.google.com/uc?id=1BXZV305GFW7akNcXbCUvjTJfV8tFWvh7",
+    "forecast": "https://drive.google.com/uc?id=1Zi_TYm438ougW-UVnIx54hlDG6WKFC-l"
+}
 
 # -------------------------
 # Load Models (Cached)
 # -------------------------
 @st.cache_resource
 def load_models():
-    """Load all ML models"""
+    """Download and load ML models"""
+
     # --- Delivery Model ---
-    delivery_zip_path = os.path.join(MODEL_DIR, "delivery_prediction_model.zip")
-    with zipfile.ZipFile(delivery_zip_path, "r") as z:
+    delivery_zip = os.path.join(BASE_DIR, "delivery_prediction_model.zip")
+    if not os.path.exists(delivery_zip):
+        gdown.download(MODEL_URLS["delivery"], delivery_zip, quiet=False)
+    with zipfile.ZipFile(delivery_zip, "r") as z:
         with z.open("delivery_prediction_model.joblib") as f:
             delivery_model = joblib.load(f)
 
     # --- Forecasting Model ---
-    forecast_zip_path = os.path.join(MODEL_DIR, "demand_forecasting_model.zip")
-    with zipfile.ZipFile(forecast_zip_path, "r") as z:
+    forecast_zip = os.path.join(BASE_DIR, "demand_forecasting_model.zip")
+    if not os.path.exists(forecast_zip):
+        gdown.download(MODEL_URLS["forecast"], forecast_zip, quiet=False)
+    with zipfile.ZipFile(forecast_zip, "r") as z:
         with z.open("demand_forecasting_model.joblib") as f:
             forecast_model = joblib.load(f)
 
-    # --- Customer Segmentation Models ---
-    seg_model_path = os.path.join(MODEL_DIR, "customer_segmentation_model.joblib")
-    seg_scaler_path = os.path.join(MODEL_DIR, "customer_segmentation_scaler.joblib")
-    seg_personas_path = os.path.join(MODEL_DIR, "customer_segmentation_personas.joblib")
-
-    seg_model = joblib.load(seg_model_path)
-    seg_scaler = joblib.load(seg_scaler_path)
-    seg_personas = joblib.load(seg_personas_path)
+    # --- Customer Segmentation Models (Relative Path) ---
+    seg_model = joblib.load(os.path.join(BASE_DIR, "customer_segmentation_model.joblib"))
+    seg_scaler = joblib.load(os.path.join(BASE_DIR, "customer_segmentation_scaler.joblib"))
+    seg_personas = joblib.load(os.path.join(BASE_DIR, "customer_segmentation_personas.joblib"))
 
     return delivery_model, seg_model, seg_scaler, seg_personas, forecast_model
 
-# Load all models
+
 delivery_model, seg_model, seg_scaler, seg_personas, forecast_model = load_models()
 
 # -------------------------
@@ -69,8 +74,17 @@ delivery_model, seg_model, seg_scaler, seg_personas, forecast_model = load_model
 # -------------------------
 @st.cache_data
 def load_data():
-    df_path = os.path.join(BASE_DIR, "DataCo.csv")
-    df = pd.read_csv(df_path, encoding="latin1", low_memory=False)
+    zip_path = os.path.join(BASE_DIR, "DataCo.zip")
+    csv_filename = "DataCo.csv"
+    csv_path = os.path.join(BASE_DIR, csv_filename)
+
+    # Extract CSV if it doesn't exist
+    if not os.path.exists(csv_path):
+        with zipfile.ZipFile(zip_path, "r") as z:
+            z.extract(csv_filename, BASE_DIR)
+
+    # Read CSV
+    df = pd.read_csv(csv_path, encoding="latin1", low_memory=False)
     df["order_date"] = pd.to_datetime(df["order_date_DateOrders"], errors="coerce")
     df.dropna(subset=["order_date"], inplace=True)
     return df
