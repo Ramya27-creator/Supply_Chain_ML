@@ -1,18 +1,5 @@
 # app.py
 import os
-
-# -------------------------
-# Limit threads to avoid sklearn / threadpoolctl errors
-# -------------------------
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-
-# -------------------------
-# Imports
-# -------------------------
 import streamlit as st
 import pandas as pd
 import joblib
@@ -21,59 +8,51 @@ import statsmodels.api as sm
 import zipfile
 
 # -------------------------
-# Page Configuration
+# Limit threads (optional)
+# -------------------------
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+
+# -------------------------
+# Page config
 # -------------------------
 st.set_page_config(page_title="Supply Chain ML Dashboard", layout="wide")
 st.title("🚀 Supply Chain ML Dashboard")
-
-# -------------------------
-# Base directory for model/data files
-# -------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# -------------------------
-# Load Models (Cached)
-# -------------------------
-@st.cache_resource
-def load_models():
-    """Load ML models from local files in repo"""
-
-    # --- Delivery Model ---
-    delivery_zip = os.path.join(BASE_DIR, "delivery_prediction_model.zip")
-    with zipfile.ZipFile(delivery_zip, "r") as z:
-        with z.open("delivery_prediction_model.joblib") as f:
-            delivery_model = joblib.load(f)
-
-    # --- Forecasting Model ---
-    forecast_zip = os.path.join(BASE_DIR, "demand_forecasting_model.zip")
-    with zipfile.ZipFile(forecast_zip, "r") as z:
-        with z.open("demand_forecasting_model.joblib") as f:
-            forecast_model = joblib.load(f)
-
-    # --- Customer Segmentation Models ---
-    seg_model = joblib.load(os.path.join(BASE_DIR, "customer_segmentation_model.joblib"))
-    seg_scaler = joblib.load(os.path.join(BASE_DIR, "customer_segmentation_scaler.joblib"))
-    seg_personas = joblib.load(os.path.join(BASE_DIR, "customer_segmentation_personas.joblib"))
-
-    return delivery_model, seg_model, seg_scaler, seg_personas, forecast_model
-
-
-delivery_model, seg_model, seg_scaler, seg_personas, forecast_model = load_models()
 
 # -------------------------
 # Load Data (Cached)
 # -------------------------
 @st.cache_data
 def load_data():
-    df_zip_path = os.path.join(BASE_DIR, "DataCo.zip")
-    with zipfile.ZipFile(df_zip_path, "r") as z:
+    with zipfile.ZipFile("DataCo.zip") as z:
         with z.open("DataCo.csv") as f:
             df = pd.read_csv(f, encoding="latin1", low_memory=False)
-            df["order_date"] = pd.to_datetime(df["order_date_DateOrders"], errors="coerce")
-            df.dropna(subset=["order_date"], inplace=True)
+    df["order_date"] = pd.to_datetime(df["order_date_DateOrders"], errors="coerce")
+    df.dropna(subset=["order_date"], inplace=True)
     return df
 
 df = load_data()
+
+# -------------------------
+# Lazy-loaded Models (Cached)
+# -------------------------
+@st.cache_resource
+def load_delivery_model():
+    return joblib.load("delivery_prediction_model.joblib")
+
+@st.cache_resource
+def load_forecast_model():
+    return joblib.load("demand_forecasting_model.joblib")
+
+@st.cache_resource
+def load_segmentation_models():
+    seg_model = joblib.load("customer_segmentation_model.joblib")
+    seg_scaler = joblib.load("customer_segmentation_scaler.joblib")
+    seg_personas = joblib.load("customer_segmentation_personas.joblib")
+    return seg_model, seg_scaler, seg_personas
 
 # -------------------------
 # Tabs
@@ -103,6 +82,7 @@ with tab1:
         longitude = st.number_input("Longitude", value=0.0)
 
     if st.button("🔮 Predict Delivery Risk", key="btn_delivery"):
+        delivery_model = load_delivery_model()  # Lazy-load
         input_df = pd.DataFrame({
             "Days_for_shipment_scheduled": [scheduled_days],
             "Shipping_Mode": [shipping_mode],
@@ -148,6 +128,7 @@ with tab2:
         ]
 
     if st.button("🔮 Predict Customer Segment", key="btn_segmentation"):
+        seg_model, seg_scaler, seg_personas = load_segmentation_models()  # Lazy-load
         input_scaled = seg_scaler.transform(input_df)
         cluster = seg_model.predict(input_scaled)[0]
         persona = seg_personas.get(cluster, "Unknown Segment")
@@ -155,6 +136,7 @@ with tab2:
         st.info(f"Persona: {persona}")
 
     if st.checkbox("📊 Show Cluster Distribution"):
+        seg_model, seg_scaler, _ = load_segmentation_models()
         customer_scaled = seg_scaler.transform(customer_df[["TotalSales", "AverageBenefit", "PurchaseFrequency"]])
         customer_df["Cluster"] = seg_model.predict(customer_scaled)
         fig, ax = plt.subplots()
@@ -170,22 +152,14 @@ with tab3:
 
     product_list = ["All Products"] + sorted(df["Product_Name"].dropna().unique().tolist())
     selected_product = st.selectbox("Select Product", product_list)
-
-    if selected_product != "All Products":
-        product_sales = df[df["Product_Name"] == selected_product] \
-                          .groupby("order_date")["Order_Item_Quantity"].sum().asfreq("D").fillna(0)
-    else:
-        product_sales = df.groupby("order_date")["Order_Item_Quantity"].sum().asfreq("D").fillna(0)
-
     days_to_forecast = st.slider("Days to Forecast", 7, 180, 30, key="forecast_days")
 
     if st.button("📈 Generate Forecast", key="btn_forecast"):
+        forecast_model = load_forecast_model()  # Lazy-load
         try:
-            if selected_product == "All Products":
-                forecast = forecast_model.get_forecast(steps=days_to_forecast)
-                pred_mean = forecast.predicted_mean
-                pred_ci = forecast.conf_int()
-            else:
+            if selected_product != "All Products":
+                product_sales = df[df["Product_Name"] == selected_product] \
+                    .groupby("order_date")["Order_Item_Quantity"].sum().asfreq("D").fillna(0)
                 model = sm.tsa.statespace.SARIMAX(
                     product_sales,
                     order=(1, 1, 1),
@@ -197,8 +171,13 @@ with tab3:
                 forecast = results.get_forecast(steps=days_to_forecast)
                 pred_mean = forecast.predicted_mean
                 pred_ci = forecast.conf_int()
+            else:
+                forecast = forecast_model.get_forecast(steps=days_to_forecast)
+                pred_mean = forecast.predicted_mean
+                pred_ci = forecast.conf_int()
 
-            last_90d = product_sales.loc[product_sales.index >= (product_sales.index.max() - pd.Timedelta(days=90))]
+            last_90d = df.groupby("order_date")["Order_Item_Quantity"].sum().asfreq("D").fillna(0)
+            last_90d = last_90d.loc[last_90d.index >= (last_90d.index.max() - pd.Timedelta(days=90))]
             fig, ax = plt.subplots(figsize=(12, 6))
             last_90d.plot(ax=ax, label="Observed Sales", color="blue")
             pred_mean.plot(ax=ax, label="Forecast", color="red")
