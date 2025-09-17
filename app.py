@@ -1,192 +1,106 @@
 # app.py
-import os
 import streamlit as st
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
-import statsmodels.api as sm
 import zipfile
+import os
 
 # -------------------------
-# Limit threads (optional)
-# -------------------------
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-
-# -------------------------
-# Page config
+# Streamlit Config
 # -------------------------
 st.set_page_config(page_title="Supply Chain ML Dashboard", layout="wide")
 st.title("🚀 Supply Chain ML Dashboard")
 
 # -------------------------
-# Load Data (Cached)
+# Cached Loaders
 # -------------------------
+@st.cache_resource
+def load_models():
+    """Load ML models once and cache them."""
+    delivery_model = joblib.load("delivery_prediction_model.joblib")
+    seg_model = joblib.load("customer_segmentation_model.joblib")
+    seg_scaler = joblib.load("segmentation_scaler.joblib")
+    seg_personas = joblib.load("segmentation_personas.joblib")
+    forecast_model = joblib.load("demand_forecasting_model.joblib")
+    return delivery_model, seg_model, seg_scaler, seg_personas, forecast_model
+
 @st.cache_data
 def load_data():
-    with zipfile.ZipFile("DataCo.zip") as z:
-        with z.open("DataCo.csv") as f:
+    """Load dataset from DataCo.zip"""
+    zip_path = "DataCo.zip"
+    csv_name = "DataCoSupplyChainDataset.csv"  # inside the zip
+
+    if not os.path.exists(zip_path):
+        st.error(f"{zip_path} not found in the repo!")
+        return None
+
+    with zipfile.ZipFile(zip_path, "r") as z:
+        if csv_name not in z.namelist():
+            st.error(f"{csv_name} not found inside {zip_path}")
+            return None
+        with z.open(csv_name) as f:
             df = pd.read_csv(f, encoding="latin1", low_memory=False)
-    df["order_date"] = pd.to_datetime(df["order_date_DateOrders"], errors="coerce")
-    df.dropna(subset=["order_date"], inplace=True)
     return df
 
-df = load_data()
+# -------------------------
+# Sidebar Navigation
+# -------------------------
+option = st.sidebar.radio(
+    "📊 Select Analysis",
+    [
+        "Late Delivery Prediction",
+        "Customer Segmentation",
+        "Demand Forecasting"
+    ]
+)
 
 # -------------------------
-# Lazy-loaded Models (Cached)
+# Late Delivery Prediction
 # -------------------------
-@st.cache_resource
-def load_delivery_model():
-    return joblib.load("delivery_prediction_model.joblib")
+if option == "Late Delivery Prediction":
+    st.header("📦 Late Delivery Prediction")
+    st.info("Loading model & dataset... please wait")
 
-@st.cache_resource
-def load_forecast_model():
-    return joblib.load("demand_forecasting_model.joblib")
+    delivery_model, _, _, _, _ = load_models()
+    df = load_data()
 
-@st.cache_resource
-def load_segmentation_models():
-    seg_model = joblib.load("customer_segmentation_model.joblib")
-    seg_scaler = joblib.load("customer_segmentation_scaler.joblib")
-    seg_personas = joblib.load("customer_segmentation_personas.joblib")
-    return seg_model, seg_scaler, seg_personas
-
-# -------------------------
-# Tabs
-# -------------------------
-tab1, tab2, tab3 = st.tabs([
-    "🚚 Late Delivery Prediction",
-    "👥 Customer Segmentation",
-    "📈 Product Demand Forecasting"
-])
-
-# --- Tab 1: Late Delivery Prediction ---
-with tab1:
-    st.header("Late Delivery Prediction")
-    st.markdown("### Enter Order Details")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        scheduled_days = st.slider("Days for Shipment (Scheduled)", 1, 30, 5)
-        shipping_mode = st.selectbox("Shipping Mode", df["Shipping_Mode"].dropna().unique())
-        region = st.selectbox("Order Region", df["Order_Region"].dropna().unique())
-        state = st.selectbox("Order State", df["Order_State"].dropna().unique())
-    with col2:
-        quantity = st.slider("Order Item Quantity", 1, 50, 1)
-        category = st.selectbox("Category Name", df["Category_Name"].dropna().unique())
-        department = st.selectbox("Department Name", df["Department_Name"].dropna().unique())
-        latitude = st.number_input("Latitude", value=0.0)
-        longitude = st.number_input("Longitude", value=0.0)
-
-    if st.button("🔮 Predict Delivery Risk", key="btn_delivery"):
-        delivery_model = load_delivery_model()  # Lazy-load
-        input_df = pd.DataFrame({
-            "Days_for_shipment_scheduled": [scheduled_days],
-            "Shipping_Mode": [shipping_mode],
-            "Order_Region": [region],
-            "Order_State": [state],
-            "Order_Item_Quantity": [quantity],
-            "Category_Name": [category],
-            "Department_Name": [department],
-            "Latitude": [latitude],
-            "Longitude": [longitude]
-        })
-        proba = delivery_model.predict_proba(input_df)[0]
-        st.success(f"✅ Probability Not Late (0): {proba[0]:.2f}")
-        st.error(f"⚠️ Probability Late (1): {proba[1]:.2f}")
-
-# --- Tab 2: Customer Segmentation ---
-with tab2:
-    st.header("Customer Segmentation")
-
-    @st.cache_data
-    def load_customer_data(df):
-        df_customer = df.groupby("Customer_Id").agg({
-            "Sales": "sum",
-            "Benefit_per_order": "mean",
-            "order_date_DateOrders": "count"
-        }).reset_index()
-        df_customer.columns = ["CustomerID", "TotalSales", "AverageBenefit", "PurchaseFrequency"]
-        return df_customer
-
-    customer_df = load_customer_data(df)
-
-    option = st.radio("Choose Input Mode:", ["Manual Entry", "Select Customer from Data"])
-    if option == "Manual Entry":
-        total_sales = st.slider("Total Sales ($)", 0, 50000, 1000, step=100)
-        avg_benefit = st.slider("Average Benefit per Order ($)", -500, 500, 0, step=10)
-        purchase_freq = st.slider("Purchase Frequency (#Orders)", 1, 50, 1)
-        input_df = pd.DataFrame([[total_sales, avg_benefit, purchase_freq]],
-                                columns=["TotalSales", "AverageBenefit", "PurchaseFrequency"])
+    if df is not None:
+        st.success("✅ Data & Model loaded successfully!")
+        st.write("Sample Data:", df.head())
+        # 👉 Add your prediction code here
     else:
-        selected_customer = st.selectbox("Select Customer", customer_df["CustomerID"].tolist())
-        input_df = customer_df[customer_df["CustomerID"] == selected_customer][
-            ["TotalSales", "AverageBenefit", "PurchaseFrequency"]
-        ]
+        st.error("Dataset could not be loaded!")
 
-    if st.button("🔮 Predict Customer Segment", key="btn_segmentation"):
-        seg_model, seg_scaler, seg_personas = load_segmentation_models()  # Lazy-load
-        input_scaled = seg_scaler.transform(input_df)
-        cluster = seg_model.predict(input_scaled)[0]
-        persona = seg_personas.get(cluster, "Unknown Segment")
-        st.success(f"Predicted Cluster: {cluster}")
-        st.info(f"Persona: {persona}")
+# -------------------------
+# Customer Segmentation
+# -------------------------
+elif option == "Customer Segmentation":
+    st.header("👥 Customer Segmentation")
+    st.info("Loading segmentation model...")
 
-    if st.checkbox("📊 Show Cluster Distribution"):
-        seg_model, seg_scaler, _ = load_segmentation_models()
-        customer_scaled = seg_scaler.transform(customer_df[["TotalSales", "AverageBenefit", "PurchaseFrequency"]])
-        customer_df["Cluster"] = seg_model.predict(customer_scaled)
-        fig, ax = plt.subplots()
-        customer_df["Cluster"].value_counts().sort_index().plot(kind="bar", ax=ax, color="skyblue")
-        ax.set_title("Customer Count per Cluster")
-        ax.set_xlabel("Cluster")
-        ax.set_ylabel("Number of Customers")
-        st.pyplot(fig)
+    _, seg_model, seg_scaler, seg_personas, _ = load_models()
+    df = load_data()
 
-# --- Tab 3: Product Demand Forecasting ---
-with tab3:
-    st.header("Product Demand Forecasting")
+    if df is not None:
+        st.success("✅ Segmentation Model & Data loaded!")
+        st.write("Segmentation Personas:", seg_personas)
+        # 👉 Add your clustering/segmentation visualization here
+    else:
+        st.error("Dataset could not be loaded!")
 
-    product_list = ["All Products"] + sorted(df["Product_Name"].dropna().unique().tolist())
-    selected_product = st.selectbox("Select Product", product_list)
-    days_to_forecast = st.slider("Days to Forecast", 7, 180, 30, key="forecast_days")
+# -------------------------
+# Demand Forecasting
+# -------------------------
+elif option == "Demand Forecasting":
+    st.header("📈 Product Demand Forecasting")
+    st.info("Loading forecasting model...")
 
-    if st.button("📈 Generate Forecast", key="btn_forecast"):
-        forecast_model = load_forecast_model()  # Lazy-load
-        try:
-            if selected_product != "All Products":
-                product_sales = df[df["Product_Name"] == selected_product] \
-                    .groupby("order_date")["Order_Item_Quantity"].sum().asfreq("D").fillna(0)
-                model = sm.tsa.statespace.SARIMAX(
-                    product_sales,
-                    order=(1, 1, 1),
-                    seasonal_order=(1, 1, 1, 7),
-                    enforce_stationarity=False,
-                    enforce_invertibility=False
-                )
-                results = model.fit(disp=False)
-                forecast = results.get_forecast(steps=days_to_forecast)
-                pred_mean = forecast.predicted_mean
-                pred_ci = forecast.conf_int()
-            else:
-                forecast = forecast_model.get_forecast(steps=days_to_forecast)
-                pred_mean = forecast.predicted_mean
-                pred_ci = forecast.conf_int()
+    _, _, _, _, forecast_model = load_models()
+    df = load_data()
 
-            last_90d = df.groupby("order_date")["Order_Item_Quantity"].sum().asfreq("D").fillna(0)
-            last_90d = last_90d.loc[last_90d.index >= (last_90d.index.max() - pd.Timedelta(days=90))]
-            fig, ax = plt.subplots(figsize=(12, 6))
-            last_90d.plot(ax=ax, label="Observed Sales", color="blue")
-            pred_mean.plot(ax=ax, label="Forecast", color="red")
-            ax.fill_between(pred_ci.index, pred_ci.iloc[:, 0], pred_ci.iloc[:, 1],
-                            color="pink", alpha=0.5)
-            ax.set_title(f"{selected_product} - Forecast for Next {days_to_forecast} Days")
-            ax.set_xlabel("Date")
-            ax.set_ylabel("Quantity")
-            ax.legend()
-            st.pyplot(fig)
-        except Exception as e:
-            st.error(f"Error generating forecast: {e}")
+    if df is not None:
+        st.success("✅ Forecasting Model & Data loaded!")
+        st.write("Sample Data for Forecasting:", df.head())
+        # 👉 Add your forecasting plots here
+    else:
+        st.error("Dataset could not be loaded!")
