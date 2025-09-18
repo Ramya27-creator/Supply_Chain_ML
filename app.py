@@ -18,6 +18,13 @@ import statsmodels.api as sm
 warnings.filterwarnings("ignore")
 st.set_page_config(page_title="🚀 Supply Chain ML Dashboard", layout="wide")
 
+st.markdown(
+    """
+    <h1 style='text-align:center; color: #4B0082;'>🚀 Supply Chain ML Dashboard</h1>
+    """,
+    unsafe_allow_html=True
+)
+
 # -----------------------------
 # Load dataset from DataCo.zip
 # -----------------------------
@@ -44,7 +51,7 @@ def load_models():
     try:
         # Delivery model (.zip containing a single .joblib inside)
         with zipfile.ZipFile("delivery_prediction_model.zip", "r") as z:
-            model_file = z.namelist()[0]  # assumes only one .joblib inside
+            model_file = z.namelist()[0]
             with z.open(model_file) as f:
                 delivery_model = joblib.load(f)
 
@@ -75,7 +82,7 @@ if df is None:
     st.stop()
 
 # -----------------------------
-# Streamlit Tabs (Only ML tabs)
+# Streamlit Tabs (ML tabs)
 # -----------------------------
 tab1, tab2, tab3 = st.tabs(
     ["🚚 Delivery Prediction", "👥 Customer Segmentation", "📈 Demand Forecasting"]
@@ -90,7 +97,9 @@ with tab1:
     if delivery_model is None:
         st.error("❌ Delivery prediction model not loaded.")
     else:
-        # Dynamically populate dropdowns based on unique values in dataset
+        st.info("Enter shipment and order details below to predict delivery status.")
+
+        # Dynamic dropdowns
         shipping_mode_options = sorted(df['Shipping_Mode'].dropna().unique())
         region_options = sorted(df['Order_Region'].dropna().unique())
         state_options = sorted(df['Order_State'].dropna().unique())
@@ -145,6 +154,8 @@ with tab2:
     if seg_model is None:
         st.error("❌ Segmentation model not loaded.")
     else:
+        st.info("Enter customer metrics to predict their segment/persona.")
+
         col1, col2 = st.columns(2)
 
         with col1:
@@ -174,6 +185,8 @@ with tab3:
     if forecast_model is None:
         st.error("❌ Forecast model not loaded.")
     else:
+        st.info("Forecast future demand based on historical order quantities.")
+
         days_to_forecast = st.slider("Days to Forecast", min_value=7, max_value=180, value=30)
 
         if st.button("📊 Generate Forecast"):
