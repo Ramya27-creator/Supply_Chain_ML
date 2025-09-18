@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Supply Chain ML Dashboard (Streamlit)
-- Model 1: Late Delivery Prediction (dynamic inputs)
+Supply Chain ML Dashboard (Streamlit Optimized)
+- Model 1: Late Delivery Prediction
 - Model 2: Customer Segmentation
 - Model 3: Product Demand Forecasting
 """
@@ -13,7 +13,6 @@ import zipfile
 import os
 import warnings
 import matplotlib.pyplot as plt
-import statsmodels.api as sm
 
 warnings.filterwarnings("ignore")
 st.set_page_config(page_title="🚀 Supply Chain ML Dashboard", layout="wide")
@@ -26,45 +25,36 @@ st.markdown(
 )
 
 # -----------------------------
-# Load dataset from DataCo.zip
+# Load dataset only once (optimized)
 # -----------------------------
 @st.cache_data(show_spinner=True)
 def load_dataco(zip_path="DataCo.zip"):
-    if not os.path.exists(zip_path):
-        st.error(f"❌ {zip_path} not found in repo root.")
-        return None
-
-    with zipfile.ZipFile(zip_path, "r") as z:
-        csv_files = [f for f in z.namelist() if f.endswith(".csv")]
-        if not csv_files:
-            st.error("❌ No CSV file found inside DataCo.zip")
+    csv_path = "DataCo.csv"
+    if not os.path.exists(csv_path):  # extract only once
+        if not os.path.exists(zip_path):
+            st.error(f"❌ {zip_path} not found in repo root.")
             return None
-        with z.open(csv_files[0]) as f:
-            df = pd.read_csv(f)
-    return df
+        with zipfile.ZipFile(zip_path, "r") as z:
+            csv_files = [f for f in z.namelist() if f.endswith(".csv")]
+            if not csv_files:
+                st.error("❌ No CSV file found inside DataCo.zip")
+                return None
+            z.extract(csv_files[0])
+            os.rename(csv_files[0], csv_path)  # standardize filename
+    return pd.read_csv(csv_path)
 
 # -----------------------------
-# Load ML models
+# Load ML models only once
 # -----------------------------
 @st.cache_resource(show_spinner=True)
 def load_models():
     try:
-        # Delivery model (.zip containing a single .joblib inside)
-        with zipfile.ZipFile("delivery_prediction_model.zip", "r") as z:
-            model_file = z.namelist()[0]
-            with z.open(model_file) as f:
-                delivery_model = joblib.load(f)
-
-        # Customer segmentation models
+        delivery_model = joblib.load("delivery_prediction_model.joblib")
         seg_model = joblib.load("customer_segmentation_model.joblib")
         seg_scaler = joblib.load("customer_segmentation_scaler.joblib")
         seg_personas = joblib.load("customer_segmentation_personas.joblib")
-
-        # Demand forecasting model
         forecast_model = joblib.load("demand_forecasting_model.joblib")
-
         return delivery_model, seg_model, seg_scaler, seg_personas, forecast_model
-
     except Exception as e:
         st.error(f"❌ Error loading models: {e}")
         return None, None, None, None, None
@@ -73,7 +63,7 @@ def load_models():
 # Load data and models
 # -----------------------------
 with st.spinner("📦 Loading dataset..."):
-    df = load_dataco("DataCo.zip")
+    df = load_dataco()
 
 with st.spinner("🤖 Loading ML models..."):
     delivery_model, seg_model, seg_scaler, seg_personas, forecast_model = load_models()
@@ -191,17 +181,19 @@ with tab3:
 
         if st.button("📊 Generate Forecast"):
             try:
+                # Prepare historical data (optimized to last 1 year)
+                df['order_date'] = pd.to_datetime(df['order_date_DateOrders'], errors='coerce')
+                daily_sales = df.groupby('order_date')['Order_Item_Quantity'].sum().reset_index()
+                daily_sales.set_index('order_date', inplace=True)
+                daily_sales = daily_sales.asfreq('D').fillna(0)
+                daily_sales = daily_sales.last('365D')  # keep last 1 year
+
                 forecast = forecast_model.get_forecast(steps=days_to_forecast)
                 pred_mean = forecast.predicted_mean
                 pred_ci = forecast.conf_int()
 
                 fig, ax = plt.subplots(figsize=(10, 5))
-                df['order_date'] = pd.to_datetime(df['order_date_DateOrders'], errors='coerce')
-                daily_sales = df.groupby('order_date')['Order_Item_Quantity'].sum().reset_index()
-                daily_sales.set_index('order_date', inplace=True)
-                daily_sales = daily_sales.asfreq('D').fillna(0)
-
-                daily_sales.last('90D').plot(ax=ax, label="Observed", color="blue")
+                daily_sales.plot(ax=ax, label="Observed", color="blue")
                 pred_mean.plot(ax=ax, label="Forecast", color="red")
                 ax.fill_between(pred_ci.index, pred_ci.iloc[:, 0], pred_ci.iloc[:, 1], color="pink", alpha=0.3)
                 ax.legend()
