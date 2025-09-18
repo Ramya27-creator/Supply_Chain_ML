@@ -12,6 +12,21 @@ st.set_page_config(page_title="Supply Chain Analysis Pipeline", layout="wide")
 st.title("🚚 Late Delivery Prediction App")
 
 # -------------------------
+# Load Dataset (for dropdowns)
+# -------------------------
+@st.cache_data
+def load_dataco(zip_path="DataCo.zip"):
+    if os.path.exists(zip_path):
+        with zipfile.ZipFile(zip_path, "r") as z:
+            csv_files = [f for f in z.namelist() if f.endswith(".csv")]
+            if not csv_files:
+                return None
+            with z.open(csv_files[0]) as f:
+                return pd.read_csv(f, on_bad_lines="skip", low_memory=False)
+    return None
+
+
+# -------------------------
 # Load Models
 # -------------------------
 @st.cache_resource
@@ -31,6 +46,7 @@ def load_models():
         return None
 
 
+df_master = load_dataco()
 delivery_model = load_models()
 
 # -------------------------
@@ -86,16 +102,24 @@ if delivery_model:
     with tab1:
         st.subheader("Manual Input for Prediction")
 
+        # Dropdown options from dataset (if available)
+        shipping_modes = sorted(df_master['Shipping_Mode'].dropna().unique()) if df_master is not None else ["Standard Class", "Second Class", "First Class", "Same Day"]
+        order_regions = sorted(df_master['Order_Region'].dropna().unique()) if df_master is not None else ["Central", "East", "West", "South"]
+        order_states = sorted(df_master['Order_State'].dropna().unique()) if df_master is not None else ["California", "Texas", "New York"]
+        categories = sorted(df_master['Category_Name'].dropna().unique()) if df_master is not None else ["Technology", "Furniture", "Office Supplies"]
+        departments = sorted(df_master['Department_Name'].dropna().unique()) if df_master is not None else ["Sales", "Operations", "Marketing"]
+
         col1, col2 = st.columns(2)
         with col1:
             Days_for_shipment_scheduled = st.number_input("Days for shipment scheduled", min_value=1, max_value=60, value=5)
-            Shipping_Mode = st.selectbox("Shipping Mode", ["Standard Class", "Second Class", "First Class", "Same Day"])
-            Order_Region = st.text_input("Order Region", "Central")
-            Order_State = st.text_input("Order State", "California")
+            Shipping_Mode = st.selectbox("Shipping Mode", shipping_modes)
+            Order_Region = st.selectbox("Order Region", order_regions)
+            Order_State = st.selectbox("Order State", order_states)
+
         with col2:
             Order_Item_Quantity = st.number_input("Order Item Quantity", min_value=1, max_value=100, value=2)
-            Category_Name = st.text_input("Category Name", "Technology")
-            Department_Name = st.text_input("Department Name", "Sales")
+            Category_Name = st.selectbox("Category Name", categories)
+            Department_Name = st.selectbox("Department Name", departments)
 
         if st.button("🔮 Predict Manually"):
             input_data = {
@@ -118,10 +142,12 @@ if delivery_model:
         if uploaded_file is not None:
             try:
                 df_upload = pd.read_csv(uploaded_file, encoding="utf-8", on_bad_lines="skip")
-            except UnicodeDecodeError:
-                df_upload = pd.read_csv(uploaded_file, encoding="latin1", on_bad_lines="skip")
-
-            st.write("📄 File Preview:")
-            st.dataframe(df_upload.head())
-            result = predict_delivery_file(df_upload)
-            st.success(result)
+                if df_upload.empty:
+                    st.error("❌ The uploaded CSV is empty. Please upload a valid file.")
+                else:
+                    st.write("📄 File Preview:")
+                    st.dataframe(df_upload.head())
+                    result = predict_delivery_file(df_upload)
+                    st.success(result)
+            except Exception as e:
+                st.error(f"❌ Error reading file: {e}")
