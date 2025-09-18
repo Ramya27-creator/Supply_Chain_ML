@@ -12,13 +12,23 @@ st.set_page_config(page_title="🚀 Supply Chain ML Dashboard", layout="wide")
 @st.cache_data(show_spinner=True)
 def load_data():
     zip_path = "DataCo.zip"  # Make sure this is in your repo root
-    csv_name = "DataCoSupplyChainDataset.csv"
 
     if not os.path.exists(zip_path):
         st.error("❌ DataCo.zip not found in repository.")
         return None
 
     with zipfile.ZipFile(zip_path, "r") as z:
+        # List all files inside the zip
+        file_list = z.namelist()
+        st.write("📂 Files in ZIP:", file_list)  # Debugging help
+
+        # Pick the first CSV automatically
+        csv_files = [f for f in file_list if f.endswith(".csv")]
+        if not csv_files:
+            st.error("❌ No CSV file found inside DataCo.zip")
+            return None
+
+        csv_name = csv_files[0]  # Use the first CSV file
         with z.open(csv_name) as f:
             df = pd.read_csv(f, encoding="latin1", low_memory=False)
     return df
