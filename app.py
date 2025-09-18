@@ -11,7 +11,7 @@ st.set_page_config(page_title="🚀 Supply Chain ML Dashboard", layout="wide")
 # -------------------------
 @st.cache_data(show_spinner=True)
 def load_data():
-    zip_path = "DataCo.zip"  # Make sure this is in your repo root
+    zip_path = "DataCo.zip"  # Ensure this file is in your repo root
 
     if not os.path.exists(zip_path):
         st.error("❌ DataCo.zip not found in repository.")
@@ -39,7 +39,7 @@ def load_data():
 @st.cache_resource(show_spinner=True)
 def load_models():
     try:
-        delivery_model = joblib.load("delivery_prediction_model.zip")
+        delivery_model = joblib.load("delivery_prediction_model.joblib")
         seg_model = joblib.load("customer_segmentation_model.joblib")
         seg_scaler = joblib.load("segmentation_scaler.joblib")
         seg_personas = joblib.load("segmentation_personas.joblib")
