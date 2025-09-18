@@ -35,7 +35,7 @@ def load_data():
 @st.cache_resource(show_spinner=True)
 def load_models():
     try:
-        delivery_model = joblib.load("delivery_prediction_model.joblib")
+        delivery_model = joblib.load("delivery_prediction_model.zip")
         seg_model = joblib.load("customer_segmentation_model.joblib")
         seg_scaler = joblib.load("customer_segmentation_scaler.joblib")
         seg_personas = joblib.load("customer_personas.joblib")
