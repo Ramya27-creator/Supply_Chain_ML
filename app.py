@@ -39,12 +39,25 @@ def load_data():
 @st.cache_resource(show_spinner=True)
 def load_models():
     try:
-        delivery_model = joblib.load("delivery_prediction_model.joblib")
+        # Special handling for delivery model (inside .zip)
+        with zipfile.ZipFile("delivery_prediction_model.zip", "r") as z:
+            file_list = z.namelist()
+            model_files = [f for f in file_list if f.endswith(".joblib")]
+            if not model_files:
+                st.error("❌ No .joblib file found inside delivery_prediction_model.zip")
+                delivery_model = None
+            else:
+                with z.open(model_files[0]) as f:
+                    delivery_model = joblib.load(f)
+
+        # Other models
         seg_model = joblib.load("customer_segmentation_model.joblib")
-        seg_scaler = joblib.load("segmentation_scaler.joblib")
-        seg_personas = joblib.load("segmentation_personas.joblib")
+        seg_scaler = joblib.load("customer_segmentation_scaler.joblib")
+        seg_personas = joblib.load("customer_segmentation_personas.joblib")
         forecast_model = joblib.load("demand_forecasting_model.joblib")
+
         return delivery_model, seg_model, seg_scaler, seg_personas, forecast_model
+
     except Exception as e:
         st.error(f"❌ Error loading models: {e}")
         return None, None, None, None, None
