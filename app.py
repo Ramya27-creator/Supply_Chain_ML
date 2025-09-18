@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Supply Chain ML Dashboard
+Supply Chain ML Dashboard (Streamlit)
 - Model 1: Late Delivery Prediction
 - Model 2: Customer Segmentation
 - Model 3: Product Demand Forecasting
@@ -11,53 +11,64 @@ import pandas as pd
 import joblib
 import zipfile
 import os
+import warnings
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+
+warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="🚀 Supply Chain ML Dashboard", layout="wide")
 
-# -------------------------
-# Cached Data Loader
-# -------------------------
+# -------------------------------------------------------------------
+# Helper function: Load DataCo dataset from DataCo.zip
+# -------------------------------------------------------------------
 @st.cache_data(show_spinner=True)
-def load_data():
-    zip_path = "DataCo.zip"
-    csv_name = "DataCo.csv"   # <- matches your ZIP contents
-
+def load_dataco(zip_path="DataCo.zip"):
     if not os.path.exists(zip_path):
-        st.error("❌ DataCo.zip not found in repository.")
+        st.error(f"❌ {zip_path} not found in repo root.")
         return None
 
     with zipfile.ZipFile(zip_path, "r") as z:
-        with z.open(csv_name) as f:
-            df = pd.read_csv(f, encoding="latin1", low_memory=False)
-    return df
+        file_list = z.namelist()
 
-# -------------------------
-# Cached Model Loader
-# -------------------------
+        # Prefer Excel first
+        excel_files = [f for f in file_list if f.endswith(".xlsx")]
+        if excel_files:
+            with z.open(excel_files[0]) as f:
+                df = pd.read_excel(f, engine="openpyxl")
+                return df
+
+        # Else try CSV
+        csv_files = [f for f in file_list if f.endswith(".csv")]
+        if csv_files:
+            with z.open(csv_files[0]) as f:
+                df = pd.read_csv(f)
+                return df
+
+        st.error("❌ No Excel or CSV file found in DataCo.zip")
+        return None
+
+# -------------------------------------------------------------------
+# Load models
+# -------------------------------------------------------------------
 @st.cache_resource(show_spinner=True)
 def load_models():
     try:
-        # Delivery model is saved as .zip
-        delivery_model = joblib.load("delivery_prediction_model.zip")
-
-        # Customer segmentation models
+        delivery_model = joblib.load("delivery_prediction_model.joblib")
         seg_model = joblib.load("customer_segmentation_model.joblib")
         seg_scaler = joblib.load("customer_segmentation_scaler.joblib")
-        seg_personas = joblib.load("customer_segmentation_personas.joblib")
-
-        # Demand forecasting model
+        seg_personas = joblib.load("customer_personas.joblib")
         forecast_model = joblib.load("demand_forecasting_model.joblib")
-
         return delivery_model, seg_model, seg_scaler, seg_personas, forecast_model
     except Exception as e:
         st.error(f"❌ Error loading models: {e}")
         return None, None, None, None, None
 
-# -------------------------
+# -------------------------------------------------------------------
 # Load Data + Models
-# -------------------------
+# -------------------------------------------------------------------
 with st.spinner("📦 Loading dataset..."):
-    df = load_data()
+    df = load_dataco("DataCo.zip")
 
 with st.spinner("🤖 Loading ML models..."):
     delivery_model, seg_model, seg_scaler, seg_personas, forecast_model = load_models()
@@ -65,115 +76,127 @@ with st.spinner("🤖 Loading ML models..."):
 if df is None:
     st.stop()
 
-# -------------------------
+# -------------------------------------------------------------------
 # Streamlit Tabs
-# -------------------------
+# -------------------------------------------------------------------
 tab1, tab2, tab3, tab4 = st.tabs(
     ["📊 Data Overview", "🚚 Delivery Prediction", "👥 Customer Segmentation", "📈 Demand Forecasting"]
 )
 
-# --- Data Overview ---
+# ============================================================
+# 📊 Data Overview
+# ============================================================
 with tab1:
-    st.subheader("Data Preview")
+    st.subheader("Dataset Preview")
     st.dataframe(df.head(20), use_container_width=True)
     st.write("Shape:", df.shape)
 
-# --- Delivery Prediction ---
+# ============================================================
+# 🚚 Model 1: Late Delivery Prediction
+# ============================================================
 with tab2:
     st.subheader("🚚 Late Delivery Prediction")
 
     if delivery_model is None:
         st.error("❌ Delivery prediction model not loaded.")
     else:
-        st.markdown("Enter order details to check if delivery is likely to be **late or on time**.")
-
         col1, col2 = st.columns(2)
 
         with col1:
             days_for_shipment = st.number_input("Days for shipment (scheduled)", min_value=1, max_value=30, value=5)
-            shipping_mode = st.selectbox("Shipping Mode", ["Standard Class", "Second Class", "First Class", "Same Day"])
-            order_region = st.selectbox("Order Region", ["North", "South", "East", "West"])
-            order_state = st.text_input("Order State", "California")
+            shipping_mode = st.selectbox("Shipping Mode", sorted(df['Shipping_Mode'].dropna().unique()))
+            order_region = st.selectbox("Order Region", sorted(df['Order_Region'].dropna().unique()))
+            order_state = st.selectbox("Order State", sorted(df['Order_State'].dropna().unique()))
 
         with col2:
-            order_item_qty = st.number_input("Order Item Quantity", min_value=1, max_value=100, value=2)
-            category_name = st.text_input("Category Name", "Technology")
-            department_name = st.text_input("Department Name", "Consumer")
+            order_item_qty = st.number_input("Order Item Quantity", min_value=1, max_value=50, value=2)
+            category_name = st.selectbox("Category Name", sorted(df['Category_Name'].dropna().unique()))
+            department_name = st.selectbox("Department Name", sorted(df['Department_Name'].dropna().unique()))
             latitude = st.number_input("Latitude", value=37.77)
             longitude = st.number_input("Longitude", value=-122.41)
 
         if st.button("🔮 Predict Delivery Status"):
             input_df = pd.DataFrame([{
-                "Days_for_shipment_scheduled": days_for_shipment,
-                "Shipping_Mode": shipping_mode,
-                "Order_Region": order_region,
-                "Order_State": order_state,
-                "Order_Item_Quantity": order_item_qty,
-                "Category_Name": category_name,
-                "Department_Name": department_name,
-                "Latitude": latitude,
-                "Longitude": longitude
+                'Days_for_shipment_scheduled': days_for_shipment,
+                'Shipping_Mode': shipping_mode,
+                'Order_Region': order_region,
+                'Order_State': order_state,
+                'Order_Item_Quantity': order_item_qty,
+                'Category_Name': category_name,
+                'Department_Name': department_name,
+                'Latitude': latitude,
+                'Longitude': longitude
             }])
 
             try:
-                pred_prob = delivery_model.predict_proba(input_df)[0][1]
+                proba = delivery_model.predict_proba(input_df)[0]
                 pred_class = delivery_model.predict(input_df)[0]
 
                 if pred_class == 1:
-                    st.error(f"⚠️ High Risk of Late Delivery (Probability: {pred_prob:.2f})")
+                    st.error(f"⚠️ High Risk of Late Delivery (Probability: {proba[1]:.2f})")
                 else:
-                    st.success(f"✅ On-Time Delivery Likely (Probability: {1 - pred_prob:.2f})")
+                    st.success(f"✅ On-Time Delivery Likely (Probability: {proba[0]:.2f})")
             except Exception as e:
                 st.error(f"❌ Prediction failed: {e}")
 
-# --- Customer Segmentation ---
+# ============================================================
+# 👥 Model 2: Customer Segmentation
+# ============================================================
 with tab3:
     st.subheader("👥 Customer Segmentation")
 
     if seg_model is None:
         st.error("❌ Segmentation model not loaded.")
     else:
-        st.markdown("Enter customer details to assign a **segment/persona**.")
-
         col1, col2 = st.columns(2)
 
         with col1:
-            recency = st.number_input("Recency (days since last purchase)", min_value=0, max_value=1000, value=30)
-            frequency = st.number_input("Frequency (number of purchases)", min_value=1, max_value=100, value=5)
+            total_sales = st.number_input("Total Sales ($)", min_value=0.0, value=500.0)
+            avg_benefit = st.number_input("Average Benefit per Order ($)", value=50.0)
 
         with col2:
-            monetary = st.number_input("Monetary Value (Total Spend $)", min_value=10, max_value=10000, value=500)
+            purchase_freq = st.number_input("Purchase Frequency", min_value=1, value=5)
 
         if st.button("🔍 Predict Segment"):
-            input_df = pd.DataFrame([[recency, frequency, monetary]], columns=["Recency", "Frequency", "Monetary"])
+            input_df = pd.DataFrame([[total_sales, avg_benefit, purchase_freq]],
+                                    columns=['TotalSales', 'AverageBenefit', 'PurchaseFrequency'])
 
             try:
-                # Scale input
-                input_scaled = seg_scaler.transform(input_df)
-                seg_label = seg_model.predict(input_scaled)[0]
-                persona = seg_personas.get(seg_label, "Unknown")
-
-                st.success(f"🧑 Customer assigned to Segment: **{seg_label} ({persona})**")
+                scaled = seg_scaler.transform(input_df)
+                cluster = seg_model.predict(scaled)[0]
+                persona = seg_personas.get(cluster, "Unknown")
+                st.success(f"🧑 Customer assigned to Segment: **{cluster} ({persona})**")
             except Exception as e:
                 st.error(f"❌ Segmentation failed: {e}")
 
-# --- Demand Forecasting ---
+# ============================================================
+# 📈 Model 3: Product Demand Forecasting
+# ============================================================
 with tab4:
     st.subheader("📈 Product Demand Forecasting")
 
     if forecast_model is None:
         st.error("❌ Forecast model not loaded.")
     else:
-        st.markdown("Select a product and forecast its demand for upcoming days.")
+        days_to_forecast = st.slider("Days to Forecast", min_value=7, max_value=180, value=30)
 
-        product_name = st.text_input("Product Name", "Product A")
-        days_ahead = st.slider("Days to Forecast", min_value=1, max_value=30, value=7)
-
-        if st.button("📊 Forecast Demand"):
+        if st.button("📊 Generate Forecast"):
             try:
-                # Dummy example input – adjust if your model needs more features
-                future_dates = pd.DataFrame({"Days_Ahead": [days_ahead], "Product": [product_name]})
-                forecast = forecast_model.predict(future_dates)[0]
-                st.success(f"📦 Forecasted Demand for {product_name} in {days_ahead} days: **{forecast:.0f} units**")
+                forecast = forecast_model.get_forecast(steps=days_to_forecast)
+                pred_mean = forecast.predicted_mean
+                pred_ci = forecast.conf_int()
+
+                fig, ax = plt.subplots(figsize=(10, 5))
+                df['order_date'] = pd.to_datetime(df['order_date_DateOrders'], errors='coerce')
+                daily_sales = df.groupby('order_date')['Order_Item_Quantity'].sum().reset_index()
+                daily_sales.set_index('order_date', inplace=True)
+                daily_sales = daily_sales.asfreq('D').fillna(0)
+
+                daily_sales.last('90D').plot(ax=ax, label="Observed", color="blue")
+                pred_mean.plot(ax=ax, label="Forecast", color="red")
+                ax.fill_between(pred_ci.index, pred_ci.iloc[:, 0], pred_ci.iloc[:, 1], color="pink", alpha=0.3)
+                ax.legend()
+                st.pyplot(fig)
+
             except Exception as e:
                 st.error(f"❌ Forecasting failed: {e}")
