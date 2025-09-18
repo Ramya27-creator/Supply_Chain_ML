@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Supply Chain ML Dashboard (Streamlit)
-- Model 1: Late Delivery Prediction
+- Model 1: Late Delivery Prediction (dynamic inputs)
 - Model 2: Customer Segmentation
 - Model 3: Product Demand Forecasting
 """
@@ -75,41 +75,40 @@ if df is None:
     st.stop()
 
 # -----------------------------
-# Streamlit Tabs
+# Streamlit Tabs (Only ML tabs)
 # -----------------------------
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["📊 Data Overview", "🚚 Delivery Prediction", "👥 Customer Segmentation", "📈 Demand Forecasting"]
+tab1, tab2, tab3 = st.tabs(
+    ["🚚 Delivery Prediction", "👥 Customer Segmentation", "📈 Demand Forecasting"]
 )
-
-# ============================================================
-# 📊 Data Overview
-# ============================================================
-with tab1:
-    st.subheader("Dataset Preview")
-    st.dataframe(df.head(20), use_container_width=True)
-    st.write("Shape:", df.shape)
 
 # ============================================================
 # 🚚 Model 1: Late Delivery Prediction
 # ============================================================
-with tab2:
+with tab1:
     st.subheader("🚚 Late Delivery Prediction")
 
     if delivery_model is None:
         st.error("❌ Delivery prediction model not loaded.")
     else:
+        # Dynamically populate dropdowns based on unique values in dataset
+        shipping_mode_options = sorted(df['Shipping_Mode'].dropna().unique())
+        region_options = sorted(df['Order_Region'].dropna().unique())
+        state_options = sorted(df['Order_State'].dropna().unique())
+        category_options = sorted(df['Category_Name'].dropna().unique())
+        department_options = sorted(df['Department_Name'].dropna().unique())
+
         col1, col2 = st.columns(2)
 
         with col1:
             days_for_shipment = st.number_input("Days for shipment (scheduled)", min_value=1, max_value=30, value=5)
-            shipping_mode = st.selectbox("Shipping Mode", sorted(df['Shipping_Mode'].dropna().unique()))
-            order_region = st.selectbox("Order Region", sorted(df['Order_Region'].dropna().unique()))
-            order_state = st.selectbox("Order State", sorted(df['Order_State'].dropna().unique()))
+            shipping_mode = st.selectbox("Shipping Mode", shipping_mode_options)
+            order_region = st.selectbox("Order Region", region_options)
+            order_state = st.selectbox("Order State", state_options)
 
         with col2:
             order_item_qty = st.number_input("Order Item Quantity", min_value=1, max_value=50, value=2)
-            category_name = st.selectbox("Category Name", sorted(df['Category_Name'].dropna().unique()))
-            department_name = st.selectbox("Department Name", sorted(df['Department_Name'].dropna().unique()))
+            category_name = st.selectbox("Category Name", category_options)
+            department_name = st.selectbox("Department Name", department_options)
             latitude = st.number_input("Latitude", value=37.77)
             longitude = st.number_input("Longitude", value=-122.41)
 
@@ -140,7 +139,7 @@ with tab2:
 # ============================================================
 # 👥 Model 2: Customer Segmentation
 # ============================================================
-with tab3:
+with tab2:
     st.subheader("👥 Customer Segmentation")
 
     if seg_model is None:
@@ -169,7 +168,7 @@ with tab3:
 # ============================================================
 # 📈 Model 3: Product Demand Forecasting
 # ============================================================
-with tab4:
+with tab3:
     st.subheader("📈 Product Demand Forecasting")
 
     if forecast_model is None:
