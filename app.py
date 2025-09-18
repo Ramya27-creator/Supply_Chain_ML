@@ -20,7 +20,7 @@ st.set_page_config(page_title="🚀 Supply Chain ML Dashboard", layout="wide")
 @st.cache_data(show_spinner=True)
 def load_data():
     zip_path = "DataCo.zip"
-    csv_name = "DataCo.csv"   # <- updated name
+    csv_name = "DataCo.csv"   # <- matches your ZIP contents
 
     if not os.path.exists(zip_path):
         st.error("❌ DataCo.zip not found in repository.")
@@ -37,11 +37,17 @@ def load_data():
 @st.cache_resource(show_spinner=True)
 def load_models():
     try:
-        delivery_model = joblib.load("delivery_prediction_model.joblib")  # <- updated ext
+        # Delivery model is saved as .zip
+        delivery_model = joblib.load("delivery_prediction_model.zip")
+
+        # Customer segmentation models
         seg_model = joblib.load("customer_segmentation_model.joblib")
         seg_scaler = joblib.load("customer_segmentation_scaler.joblib")
         seg_personas = joblib.load("customer_segmentation_personas.joblib")
+
+        # Demand forecasting model
         forecast_model = joblib.load("demand_forecasting_model.joblib")
+
         return delivery_model, seg_model, seg_scaler, seg_personas, forecast_model
     except Exception as e:
         st.error(f"❌ Error loading models: {e}")
