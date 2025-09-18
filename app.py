@@ -70,23 +70,11 @@ def predict_delivery_file(df_file: pd.DataFrame):
 
     return "\n".join(results)
 
-def predict_from_auto_csv():
-    file_path = "Prediction_Late_Delivery_Data.csv"
-    if not os.path.exists(file_path):
-        return "⚠️ Prediction_Late_Delivery_Data.csv not found in current folder."
-
-    try:
-        df_file = pd.read_csv(file_path, encoding="utf-8", on_bad_lines="skip")
-    except UnicodeDecodeError:
-        df_file = pd.read_csv(file_path, encoding="latin1", on_bad_lines="skip")
-
-    return predict_delivery_file(df_file)
-
 # -------------------------
 # App Tabs
 # -------------------------
 if delivery_model:
-    tab1, tab2, tab3 = st.tabs(["📝 Manual Entry", "📂 Upload File", "⏰ Auto File Prediction"])
+    tab1, tab2 = st.tabs(["📝 Manual Entry", "📂 Upload File"])
 
     # ---- Tab 1: Manual Entry ----
     with tab1:
@@ -130,12 +118,4 @@ if delivery_model:
             st.write("📄 File Preview:")
             st.dataframe(df_upload.head())
             result = predict_delivery_file(df_upload)
-            st.success(result)
-
-    # ---- Tab 3: Auto File Prediction ----
-    with tab3:
-        st.subheader("Auto Prediction from Scheduled File")
-        st.info("This will automatically read `Prediction_Late_Delivery_Data.csv` from the current folder.")
-        result = predict_from_auto_csv()
-        if result:
             st.success(result)
