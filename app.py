@@ -39,26 +39,32 @@ delivery_model = load_models()
 def predict_delivery_single(input_data: dict):
     df = pd.DataFrame([input_data])
     df.columns = [c.strip().replace(" ", "_") for c in df.columns]
+
     required_cols = delivery_model.feature_names_in_
 
-    # Select only required columns
+    # Add missing columns with default values
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = 0  # default fill
+
     df = df[required_cols]
     proba = delivery_model.predict_proba(df)[0]
     return f"On Time: {round(proba[0]*100,2)}%, Late: {round(proba[1]*100,2)}%"
 
+
 def predict_delivery_file(df_file: pd.DataFrame):
     df_file = df_file.copy()
     df_file.columns = [c.strip().replace(" ", "_") for c in df_file.columns]
+
     required_cols = delivery_model.feature_names_in_
 
-    # Check missing columns
-    missing_cols = [c for c in required_cols if c not in df_file.columns]
-    if missing_cols:
-        return f"Missing columns: {missing_cols}"
+    # Add missing columns with default values
+    for col in required_cols:
+        if col not in df_file.columns:
+            df_file[col] = 0
 
-    # Select only required columns
-    df_file_req = df_file[required_cols]
-    proba_list = delivery_model.predict_proba(df_file_req)
+    df_file = df_file[required_cols]
+    proba_list = delivery_model.predict_proba(df_file)
 
     # Show preview
     results = []
