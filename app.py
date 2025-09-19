@@ -76,7 +76,7 @@ with tab1:
     if delivery_model is None:
         st.error("❌ Delivery prediction model not loaded.")
     else:
-        # Inputs
+        # Inputs (aligned with training features)
         Days_for_shipment_scheduled = st.number_input("Days for shipment scheduled", min_value=1, max_value=60, value=5)
         Order_Item_Quantity = st.number_input("Order Item Quantity", min_value=1, max_value=100, value=1)
         Shipping_Mode = st.selectbox("Shipping Mode", ["Standard Class", "Second Class", "First Class", "Same Day"])
