@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+Streamlit App for Supply Chain ML Dashboard
+- Model 1: Late Delivery Prediction
+- Model 2: Customer Segmentation
+- Model 3: Product Demand Forecasting
+"""
+
 import streamlit as st
 import pandas as pd
 import joblib
@@ -30,7 +38,7 @@ def load_models():
         # Customer segmentation models
         seg_model = joblib.load("customer_segmentation_model.joblib") if os.path.exists("customer_segmentation_model.joblib") else None
         seg_scaler = joblib.load("customer_segmentation_scaler.joblib") if os.path.exists("customer_segmentation_scaler.joblib") else None
-        seg_personas = joblib.load("customer_segmentation_personas.joblib") if os.path.exists("customer_segmentation_personas.joblib") else {}
+        seg_personas = joblib.load("customer_personas.joblib") if os.path.exists("customer_personas.joblib") else {}
 
         # Forecasting model
         forecast_model = joblib.load("demand_forecasting_model.joblib") if os.path.exists("demand_forecasting_model.joblib") else None
@@ -76,7 +84,7 @@ with tab1:
     if delivery_model is None:
         st.error("❌ Delivery prediction model not loaded.")
     else:
-        # Inputs (aligned with training features)
+        # Inputs (same as training features, but no Lat/Long)
         Days_for_shipment_scheduled = st.number_input("Days for shipment scheduled", min_value=1, max_value=60, value=5)
         Order_Item_Quantity = st.number_input("Order Item Quantity", min_value=1, max_value=100, value=1)
         Shipping_Mode = st.selectbox("Shipping Mode", ["Standard Class", "Second Class", "First Class", "Same Day"])
