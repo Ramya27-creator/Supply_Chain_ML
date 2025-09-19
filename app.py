@@ -2,8 +2,7 @@
 """
 Streamlit App for Supply Chain ML Dashboard
 - Model 1: Late Delivery Prediction
-- Model 2: Customer Segmentation
-- Model 3: Product Demand Forecasting
+- Model 2: Product Demand Forecasting
 """
 
 import streamlit as st
@@ -35,21 +34,16 @@ def load_models():
         else:
             delivery_model = None
 
-        # Customer segmentation models
-        seg_model = joblib.load("customer_segmentation_model.joblib") if os.path.exists("customer_segmentation_model.joblib") else None
-        seg_scaler = joblib.load("customer_segmentation_scaler.joblib") if os.path.exists("customer_segmentation_scaler.joblib") else None
-        seg_personas = joblib.load("customer_personas.joblib") if os.path.exists("customer_personas.joblib") else {}
-
         # Forecasting model
         forecast_model = joblib.load("demand_forecasting_model.joblib") if os.path.exists("demand_forecasting_model.joblib") else None
 
-        return delivery_model, seg_model, seg_scaler, seg_personas, forecast_model
+        return delivery_model, forecast_model
 
     except Exception as e:
         st.error(f"❌ Error loading models: {e}")
-        return None, None, None, {}, None
+        return None, None
 
-delivery_model, seg_model, seg_scaler, seg_personas, forecast_model = load_models()
+delivery_model, forecast_model = load_models()
 
 # -------------------------
 # Helper Functions
@@ -64,17 +58,10 @@ def predict_delivery(input_data: dict):
     proba = delivery_model.predict_proba(df)[0]
     return proba
 
-def predict_segmentation(total_sales, avg_benefit, purchase_freq):
-    input_df = pd.DataFrame([[total_sales, avg_benefit, purchase_freq]], columns=["TotalSales","AverageBenefit","PurchaseFrequency"])
-    scaled = seg_scaler.transform(input_df)
-    cluster = seg_model.predict(scaled)[0]
-    persona = seg_personas.get(cluster, "Unknown")
-    return cluster, persona
-
 # -------------------------
 # Tabs
 # -------------------------
-tab1, tab2, tab3 = st.tabs(["🚚 Delivery Prediction", "👥 Customer Segmentation", "📈 Demand Forecasting"])
+tab1, tab2 = st.tabs(["🚚 Delivery Prediction", "📈 Demand Forecasting"])
 
 # =====================================================
 # 🚚 Tab 1: Delivery Prediction
@@ -84,7 +71,7 @@ with tab1:
     if delivery_model is None:
         st.error("❌ Delivery prediction model not loaded.")
     else:
-        # Inputs (same as training features, but no Lat/Long)
+        # Inputs
         Days_for_shipment_scheduled = st.number_input("Days for shipment scheduled", min_value=1, max_value=60, value=5)
         Order_Item_Quantity = st.number_input("Order Item Quantity", min_value=1, max_value=100, value=1)
         Shipping_Mode = st.selectbox("Shipping Mode", ["Standard Class", "Second Class", "First Class", "Same Day"])
@@ -111,30 +98,34 @@ with tab1:
                 st.success(f"✅ Likely On-Time Delivery ({proba[0]*100:.2f}%)")
 
 # =====================================================
-# 👥 Tab 2: Customer Segmentation
+# 📈 Tab 2: Demand Forecasting
 # =====================================================
 with tab2:
-    st.subheader("Customer Segmentation")
-    if seg_model is None:
-        st.error("❌ Segmentation model not loaded.")
-    else:
-        total_sales = st.number_input("Total Sales ($)", min_value=0.0, value=500.0)
-        avg_benefit = st.number_input("Average Benefit per Order ($)", value=50.0)
-        purchase_freq = st.number_input("Purchase Frequency", min_value=1, value=5)
-
-        if st.button("Predict Segment"):
-            cluster, persona = predict_segmentation(total_sales, avg_benefit, purchase_freq)
-            st.success(f"🧑 Customer assigned to Segment {cluster}: **{persona}**")
-
-# =====================================================
-# 📈 Tab 3: Demand Forecasting
-# =====================================================
-with tab3:
     st.subheader("Product Demand Forecasting")
     if forecast_model is None:
         st.error("❌ Forecasting model not loaded.")
     else:
+        # Load product list (from dataset inside ZIP if available)
+        product_list = []
+        if os.path.exists("DataCo.zip"):
+            with zipfile.ZipFile("DataCo.zip", "r") as z:
+                csv_files = [f for f in z.namelist() if f.endswith(".csv")]
+                excel_files = [f for f in z.namelist() if f.endswith(".xlsx")]
+                if csv_files:
+                    with z.open(csv_files[0]) as f:
+                        df = pd.read_csv(f)
+                elif excel_files:
+                    with z.open(excel_files[0]) as f:
+                        df = pd.read_excel(f, engine="openpyxl")
+                else:
+                    df = None
+
+                if df is not None and "Product_Name" in df.columns:
+                    product_list = sorted(df["Product_Name"].dropna().unique().tolist())
+
+        Product_Name = st.selectbox("Select Product", product_list if product_list else ["Product A", "Product B", "Product C"])
         days_to_forecast = st.slider("Days to Forecast", min_value=7, max_value=180, value=30)
+
         if st.button("Generate Forecast"):
             try:
                 forecast = forecast_model.get_forecast(steps=days_to_forecast)
@@ -142,7 +133,7 @@ with tab3:
                 pred_ci = forecast.conf_int()
 
                 fig, ax = plt.subplots(figsize=(10, 5))
-                pred_mean.plot(ax=ax, label="Forecast", color="red")
+                pred_mean.plot(ax=ax, label=f"Forecast for {Product_Name}", color="red")
                 ax.fill_between(pred_ci.index, pred_ci.iloc[:, 0], pred_ci.iloc[:, 1], color="pink", alpha=0.3)
                 ax.legend()
                 st.pyplot(fig)
