@@ -93,7 +93,7 @@ with tab1:
     if delivery_model is None or df is None:
         st.error("❌ Delivery prediction model or dataset not loaded.")
     else:
-        # Inputs (dynamic from dataset)
+        # Inputs (from dataset columns)
         Days_for_shipment_scheduled = st.number_input("Days for shipment scheduled", min_value=1, max_value=60, value=5)
         Order_Item_Quantity = st.number_input("Order Item Quantity", min_value=1, max_value=100, value=1)
 
@@ -136,7 +136,7 @@ with tab2:
         if st.button("Generate Forecast"):
             try:
                 # Historical sales per day
-                sales_data = df[df["Product_Name"] == Product_Name].groupby("order date (DateOrders)").size()
+                sales_data = df[df["Product_Name"] == Product_Name].groupby("order_date_DateOrders").size()
                 sales_data.index = pd.to_datetime(sales_data.index, errors="coerce")
                 sales_data = sales_data.dropna().sort_index()
 
