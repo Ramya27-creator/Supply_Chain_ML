@@ -64,21 +64,46 @@ def predict_delivery(input_data: dict):
 tab1, tab2 = st.tabs(["🚚 Delivery Prediction", "📈 Demand Forecasting"])
 
 # =====================================================
-# 🚚 Tab 1: Delivery Prediction
+# 🚚 Tab 1: Delivery Prediction (with dynamic dropdowns)
 # =====================================================
 with tab1:
     st.subheader("Late Delivery Prediction")
     if delivery_model is None:
         st.error("❌ Delivery prediction model not loaded.")
     else:
+        # Load dropdown options dynamically from dataset
+        region_options, dept_options = [], []
+        if os.path.exists("DataCo.zip"):
+            with zipfile.ZipFile("DataCo.zip", "r") as z:
+                csv_files = [f for f in z.namelist() if f.endswith(".csv")]
+                excel_files = [f for f in z.namelist() if f.endswith(".xlsx")]
+                if csv_files:
+                    with z.open(csv_files[0]) as f:
+                        df_main = pd.read_csv(f)
+                elif excel_files:
+                    with z.open(excel_files[0]) as f:
+                        df_main = pd.read_excel(f, engine="openpyxl")
+                else:
+                    df_main = None
+
+                if df_main is not None:
+                    if "Order_Region" in df_main.columns:
+                        region_options = sorted(df_main["Order_Region"].dropna().unique().tolist())
+                    if "Department_Name" in df_main.columns:
+                        dept_options = sorted(df_main["Department_Name"].dropna().unique().tolist())
+
+        # Fallback defaults if dataset not found
+        region_options = region_options if region_options else ["East", "West", "Central", "South"]
+        dept_options = dept_options if dept_options else ["Sales", "Operations", "Marketing", "Finance", "Other"]
+
         # Inputs
         Days_for_shipment_scheduled = st.number_input("Days for shipment scheduled", min_value=1, max_value=60, value=5)
         Order_Item_Quantity = st.number_input("Order Item Quantity", min_value=1, max_value=100, value=1)
         Shipping_Mode = st.selectbox("Shipping Mode", ["Standard Class", "Second Class", "First Class", "Same Day"])
-        Order_Region = st.selectbox("Order Region", ["East", "West", "Central", "South"])
-        Order_State = st.selectbox("Order State", ["California", "Texas", "New York", "Florida", "Other"])
+        Order_Region = st.selectbox("Order Region", region_options)
+        Order_State = st.text_input("Order State")   # free text if not standardized
         Category_Name = st.selectbox("Category Name", ["Furniture", "Office Supplies", "Technology"])
-        Department_Name = st.selectbox("Department Name", ["Sales", "Operations", "Marketing", "Finance", "Other"])
+        Department_Name = st.selectbox("Department Name", dept_options)
 
         if st.button("Predict Delivery"):
             input_data = {
@@ -98,44 +123,41 @@ with tab1:
                 st.success(f"✅ Likely On-Time Delivery ({proba[0]*100:.2f}%)")
 
 # =====================================================
-# 📈 Tab 2: Demand Forecasting
+# 📈 Tab 2: Demand Forecasting (with historical + forecast)
 # =====================================================
 with tab2:
     st.subheader("Product Demand Forecasting")
     if forecast_model is None:
         st.error("❌ Forecasting model not loaded.")
     else:
-        # Load product list (from dataset inside ZIP if available)
-        product_list = []
-        if os.path.exists("DataCo.zip"):
-            with zipfile.ZipFile("DataCo.zip", "r") as z:
-                csv_files = [f for f in z.namelist() if f.endswith(".csv")]
-                excel_files = [f for f in z.namelist() if f.endswith(".xlsx")]
-                if csv_files:
-                    with z.open(csv_files[0]) as f:
-                        df = pd.read_csv(f)
-                elif excel_files:
-                    with z.open(excel_files[0]) as f:
-                        df = pd.read_excel(f, engine="openpyxl")
-                else:
-                    df = None
-
-                if df is not None and "Product_Name" in df.columns:
-                    product_list = sorted(df["Product_Name"].dropna().unique().tolist())
-
         Product_Name = st.selectbox("Select Product", product_list if product_list else ["Product A", "Product B", "Product C"])
         days_to_forecast = st.slider("Days to Forecast", min_value=7, max_value=180, value=30)
 
         if st.button("Generate Forecast"):
             try:
-                forecast = forecast_model.get_forecast(steps=days_to_forecast)
-                pred_mean = forecast.predicted_mean
-                pred_ci = forecast.conf_int()
+                # Historical data for selected product
+                if df is not None and "Product_Name" in df.columns and "Order_Item_Quantity" in df.columns and "order_date" in df.columns:
+                    product_data = df[df["Product_Name"] == Product_Name]
+                    product_data["order_date"] = pd.to_datetime(product_data["order_date"])
+                    ts = product_data.groupby("order_date")["Order_Item_Quantity"].sum().asfreq("D").fillna(0)
 
-                fig, ax = plt.subplots(figsize=(10, 5))
-                pred_mean.plot(ax=ax, label=f"Forecast for {Product_Name}", color="red")
-                ax.fill_between(pred_ci.index, pred_ci.iloc[:, 0], pred_ci.iloc[:, 1], color="pink", alpha=0.3)
-                ax.legend()
-                st.pyplot(fig)
+                    # Fit forecasting model on historical data
+                    fitted_model = forecast_model.fit(ts)  # re-fit if using a generic model
+                    forecast = fitted_model.get_forecast(steps=days_to_forecast)
+                    pred_mean = forecast.predicted_mean
+                    pred_ci = forecast.conf_int()
+
+                    # Plot
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    ts.plot(ax=ax, label="Historical Demand", color="blue")
+                    pred_mean.plot(ax=ax, label=f"Forecast for {Product_Name}", color="red")
+                    ax.fill_between(pred_ci.index, pred_ci.iloc[:, 0], pred_ci.iloc[:, 1], color="pink", alpha=0.3)
+                    ax.legend()
+                    st.pyplot(fig)
+                else:
+                    st.error("⚠️ Historical data for product not available in dataset.")
+
             except Exception as e:
+                st.error(f"❌ Forecasting failed: {e}")
+
                 st.error(f"❌ Forecasting failed: {e}")
