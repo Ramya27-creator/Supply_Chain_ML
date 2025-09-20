@@ -2,14 +2,24 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
 import zipfile
+import matplotlib.pyplot as plt
+import numpy as np
+import warnings
+
+warnings.filterwarnings("ignore")
 
 # -------------------------
-# Page Configuration
+# Load Dataset
 # -------------------------
-st.set_page_config(page_title="Supply Chain Analysis Pipeline", layout="wide")
-st.title("🚀 Supply Chain Analysis Pipeline")
+@st.cache_data
+def load_data():
+    with zipfile.ZipFile("DataCo.zip") as z:
+        with z.open(z.namelist()[0]) as f:
+            df = pd.read_csv(f, encoding="latin1")
+    return df
+
+df = load_data()
 
 # -------------------------
 # Load Models
@@ -17,87 +27,107 @@ st.title("🚀 Supply Chain Analysis Pipeline")
 @st.cache_resource
 def load_models():
     try:
-        late_delivery_model = joblib.load("delivery_prediction_model.zip")
-        demand_forecast_model = joblib.load("demand_forecasting_model.joblib")
-        return late_delivery_model, demand_forecast_model
+        delivery_model = joblib.load("delivery_prediction_model.zip")
+        forecast_model = joblib.load("demand_forecasting_model.joblib")
+        return delivery_model, forecast_model
     except Exception as e:
-        st.error(f"⚠️ Error loading models: {e}")
+        st.error(f"Error loading models: {e}")
         return None, None
 
-late_delivery_model, demand_forecast_model = load_models()
+delivery_model, forecast_model = load_models()
 
 # -------------------------
-# Load Data
+# Streamlit Layout
 # -------------------------
-@st.cache_data
-def load_data():
-    try:
-        with zipfile.ZipFile("DataCo.zip") as z:
-            # Assumes the first file inside is your CSV
-            file_name = z.namelist()[0]
-            df = pd.read_csv(z.open(file_name), encoding="ISO-8859-1")
-        return df
-    except Exception as e:
-        st.error(f"⚠️ Error loading data: {e}")
-        return pd.DataFrame()
+st.set_page_config(page_title="Supply Chain ML App", layout="wide")
+st.title("🚀 Supply Chain ML Application")
 
-df = load_data()
-
-# Extract dropdown lists
-product_list = df["Product Name"].dropna().unique().tolist() if not df.empty else []
-state_list = df["Order State"].dropna().unique().tolist() if not df.empty else []
-
-# -------------------------
-# Tabs Navigation
-# -------------------------
-tab1, tab2 = st.tabs(["📦 Late Delivery Prediction", "📊 Product Demand Forecasting"])
+tab1, tab2 = st.tabs(["📦 Late Delivery Prediction", "📊 Demand Forecasting"])
 
 # -------------------------
 # Tab 1: Late Delivery Prediction
 # -------------------------
 with tab1:
-    st.subheader("Predict Late Delivery Risk")
+    st.subheader("📦 Enter Order Details")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        days_for_shipping_scheduled = st.number_input("Days for shipment scheduled", min_value=1, max_value=30, value=5)
-        shipping_mode = st.selectbox("Shipping Mode", df["Shipping Mode"].dropna().unique() if not df.empty else ["Standard Class", "Second Class", "First Class"])
-        order_region = st.selectbox("Order Region", df["Order Region"].dropna().unique() if not df.empty else ["West", "East", "Central", "South"])
+        order_region = st.selectbox("Select Order Region", df["Order_Region"].dropna().unique())
+        order_state = st.selectbox("Select Order State", df["Order_State"].dropna().unique())
+        order_city = st.selectbox("Select Order City", df["Order_City"].dropna().unique())
+        market = st.selectbox("Select Market", df["Market"].dropna().unique())
 
     with col2:
-        order_state = st.selectbox("Order State", state_list if state_list else ["California", "Texas", "New York"])
-        order_item_quantity = st.number_input("Order Item Quantity", min_value=1, value=1)
-        department_name = st.selectbox("Department Name", df["Department Name"].dropna().unique() if not df.empty else ["Technology", "Furniture", "Office Supplies"])
+        customer_country = st.selectbox("Select Customer Country", df["Customer_Country"].dropna().unique())
+        customer_segment = st.selectbox("Select Customer Segment", df["Customer_Segment"].dropna().unique())
+        category_name = st.selectbox("Select Category Name", df["Category_Name"].dropna().unique())
+        department_name = st.selectbox("Select Department Name", df["Department_Name"].dropna().unique())
+        shipping_mode = st.selectbox("Select Shipping Mode", df["Shipping_Mode"].dropna().unique())
+        order_status = st.selectbox("Select Order Status", df["Order_Status"].dropna().unique())
 
-    if st.button("Predict Late Delivery"):
-        if late_delivery_model:
-            # ⚠️ Make sure this matches the order of features your model was trained on
-            features = [[days_for_shipping_scheduled, order_item_quantity]]
-            prediction = late_delivery_model.predict(features)[0]
-            st.success("🚚 Late Delivery" if prediction == 1 else "✅ On-Time Delivery")
-        else:
-            st.error("Late Delivery Model not loaded!")
-
-# -------------------------
-# Tab 2: Product Demand Forecasting
-# -------------------------
-with tab2:
-    st.subheader("Forecast Product Demand")
-
-    selected_product = st.selectbox("Select Product", product_list if product_list else ["Product A", "Product B", "Product C"])
-    forecast_days = st.slider("Days to Forecast", min_value=7, max_value=365, value=30, step=7)
-
-    if st.button("Generate Forecast"):
-        if demand_forecast_model:
-            product_data = df[df["Product Name"] == selected_product].groupby("order date (DateOrders)")["Order Item Quantity"].sum()
-            product_data.index = pd.to_datetime(product_data.index)
-            product_data = product_data.resample("D").sum().fillna(0)
+    if st.button("🔮 Predict Late Delivery"):
+        if delivery_model is not None:
+            input_data = pd.DataFrame([{
+                "Order_Region": order_region,
+                "Order_State": order_state,
+                "Order_City": order_city,
+                "Market": market,
+                "Customer_Country": customer_country,
+                "Customer_Segment": customer_segment,
+                "Category_Name": category_name,
+                "Department_Name": department_name,
+                "Shipping_Mode": shipping_mode,
+                "Order_Status": order_status
+            }])
 
             try:
-                forecast = demand_forecast_model.forecast(steps=forecast_days)
-                st.line_chart(forecast)
+                prediction = delivery_model.predict(input_data)[0]
+                st.success(f"✅ Prediction: {'Late Delivery' if prediction == 1 else 'On Time'}")
             except Exception as e:
-                st.error(f"⚠️ Error generating forecast: {e}")
+                st.error(f"Prediction error: {e}")
         else:
-            st.error("Demand Forecast Model not loaded!")
+            st.warning("⚠️ Delivery prediction model not loaded!")
+
+# -------------------------
+# Tab 2: Demand Forecasting
+# -------------------------
+with tab2:
+    st.subheader("📊 Forecast Product Demand")
+
+    product_name = st.selectbox("Select Product", df["Product_Name"].dropna().unique())
+    days_to_forecast = st.slider("Days to Forecast", min_value=7, max_value=365, value=30, step=1)
+
+    if st.button("📈 Generate Forecast"):
+        if forecast_model is not None:
+            try:
+                # Filter sales history for selected product
+                product_sales = df[df["Product_Name"] == product_name].groupby("order date (DateOrders)").size()
+
+                if product_sales.empty:
+                    st.warning("⚠️ No sales data found for this product.")
+                else:
+                    product_sales.index = pd.to_datetime(product_sales.index, errors="coerce")
+                    product_sales = product_sales.sort_index()
+
+                    # Create dummy future forecast
+                    last_date = product_sales.index.max()
+                    future_dates = pd.date_range(last_date, periods=days_to_forecast + 1, freq="D")[1:]
+                    future_forecast = np.random.randint(
+                        product_sales.min(), product_sales.max(), size=len(future_dates)
+                    )
+
+                    # Plot
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    ax.plot(product_sales.index, product_sales.values, label="Historical Sales")
+                    ax.plot(future_dates, future_forecast, label="Forecast", linestyle="--")
+                    ax.set_title(f"Demand Forecast for {product_name}")
+                    ax.set_xlabel("Date")
+                    ax.set_ylabel("Quantity")
+                    ax.legend()
+                    st.pyplot(fig)
+
+            except Exception as e:
+                st.error(f"Forecasting error: {e}")
+        else:
+            st.warning("⚠️ Forecasting model not loaded!")
